@@ -1,0 +1,328 @@
+
+Command to build specific module:
+mvn install -pl registration-processor --also-make  -DskipTests --amd
+==============================
+For postgress
+$ sudo su postgres
+$ sudo vim /etc/postgresql/10/main/pg_hba.conf/
+
+Change to following:
+
+local   all             all                                     trust 
+host    all             all             127.0.0.1/32            trust
+
+Runs on port 5432
+
+=============================
+
+To run an sql script, first login as postgres user:
+$ sudo su postgres
+$ psql -f <sql file> -U sysadmin -W
+password: 'mosip'
+
+To login into psql using a specific user without login in as postres you have to give the db name too:
+$ psql -d <dbname> -U <username> -W
+
+Enter password that was set for this user.
+=============================
+# Following changes in db scripts 
+
+diff --git a/scripts/database/mosip_regprc/mosip_regprc_db.sql b/scripts/database/mosip_regprc/mosip_regprc_db.sql
+index fc5b0b9311..8ea1ef51d1 100644
+--- a/scripts/database/mosip_regprc/mosip_regprc_db.sql
++++ b/scripts/database/mosip_regprc/mosip_regprc_db.sql
+@@ -4,6 +4,7 @@ CREATE DATABASE mosip_regprc
+ 	LC_COLLATE = 'en_US.UTF-8'
+ 	LC_CTYPE = 'en_US.UTF-8'
+ 	TABLESPACE = pg_default
++        TEMPLATE = template0
+ 	OWNER = sysadmin;
+ -- ddl-end --
+ COMMENT ON DATABASE mosip_regprc IS 'The data related to Registration process flows and transaction will be maintained in this database. This database also maintains data that is needed to perform deduplication.';
+diff --git a/scripts/database/mosip_regprc/mosip_role_common.sql b/scripts/database/mosip_regprc/mosip_role_common.sql
+index abeff555ae..64cc19b547 100644
+--- a/scripts/database/mosip_regprc/mosip_role_common.sql
++++ b/scripts/database/mosip_regprc/mosip_role_common.sql
+@@ -1,5 +1,5 @@
+ -- object: sysadmin | type: ROLE --
+--- DROP ROLE IF EXISTS sysadmin;
++DROP ROLE IF EXISTS sysadmin;
+ CREATE ROLE sysadmin WITH 
+ 	SUPERUSER
+ 	CREATEDB
+@@ -7,25 +7,25 @@ CREATE ROLE sysadmin WITH
+ 	INHERIT
+ 	LOGIN
+ 	REPLICATION
+-	PASSWORD 'Mosipadm@dev123';
++	PASSWORD 'mosip';
+ -- ddl-end --
+ 
+ -- object: dbadmin | type: ROLE --
+--- DROP ROLE IF EXISTS dbadmin;
++DROP ROLE IF EXISTS dbadmin;
+ CREATE ROLE dbadmin WITH 
+ 	CREATEDB
+ 	CREATEROLE
+ 	INHERIT
+ 	LOGIN
+ 	REPLICATION
+-	PASSWORD 'Mosipadm@dev123';
++	PASSWORD 'mosip';
+ -- ddl-end --
+ 
+ -- object: appadmin | type: ROLE --
+--- DROP ROLE IF EXISTS appadmin;
++DROP ROLE IF EXISTS appadmin;
+ CREATE ROLE appadmin WITH 
+ 	INHERIT
+ 	LOGIN
+-	PASSWORD 'Mosipadm@dev123';
++	PASSWORD 'mosip';
+ -- ddl-end --
+ 
+diff --git a/scripts/database/mosip_regprc/mosip_role_regprcuser.sql b/scripts/database/mosip_regprc/mosip_role_regprcuser.sql
+index 6ef3f87a01..8ca635b880 100644
+--- a/scripts/database/mosip_regprc/mosip_role_regprcuser.sql
++++ b/scripts/database/mosip_regprc/mosip_role_regprcuser.sql
+@@ -1,8 +1,8 @@
+ -- object: regprcuser | type: ROLE --
+--- DROP ROLE IF EXISTS regprcuser;
++DROP ROLE IF EXISTS regprcuser;
+ CREATE ROLE regprcuser WITH 
+ 	INHERIT
+ 	LOGIN
+-	PASSWORD 'Mosip@dev123';
++	PASSWORD 'mosip';
+ -- ddl-end --
+ 
+=================
+Config file path:
+spring.cloud.config.url/kernel/spring.profiles.active/spring.cloud.config.label
+=================
+To run a jar
+
+java -Xmx5000000000 -jar <jarname>
+
+The -Xmx option sets the max heap size for java process, this will reduce
+the total  memory consumption for running multiple jars on a laptop.
+==================
+Config server:
+Run config server as 
+$ cd ~/projects/mosip/config-server
+$ mvn spring-boot:run
+
+REG PROCESSOR notes:
+
+- Duplicate packet check in the first stage is just checking if the same registration id is present. 
+
+- If there is an exception in the processing, file will get deleted??
+
+public void processPacket(RoutingContext ctx) {
+    try {
+      MessageDTO messageDTO = packetReceiverService.processPacket(file);
+      messageDTO.setMessageBusAddress(MessageBusAddress.PACKET_RECEIVER_OUT);
+      if (messageDTO.getIsValid()) {
+        this.sendMessage(messageDTO);
+      }
+    } finally {
+      if (file != null) {
+        if (file.exists()) {
+          deleteFile(file);
+        }
+      }
+    }
+
+---------
+Since local instances do not have HTTPS, change the following in 
+registration-processor/registration-processor-core/src/main/java/io/mosip/registration/processor/core/token/validation/TokenValidator.java
+:
+
+-import javax.net.ssl.HttpsURLConnection;
++import java.net.HttpURLConnection;
+
+-HttpsURLConnection con = (HttpsURLConnection) obj.openConnection();
++HttpURLConnection con = (HttpURLConnection) obj.openConnection();
+
+See mosip-test/query_test.py for ports and local urls for various modules
+=======================
+
+QUESTION:
+"eng" is hardcoded in storePacket(): Should it be read from config?
+
+dto.setLatestTransactionTypeCode(RegistrationTransactionTypeCode.PACKET_RECEIVER.toString());
+		dto.setRegistrationStageName(stageName);
+
+		dto.setRegistrationId(registrationId);
+		dto.setRegistrationType(regEntity.getRegistrationType());
+		dto.setReferenceRegistrationId(null);
+		dto.setStatusCode(RegistrationStatusCode.PROCESSING.toString());
+		dto.setLangCode("eng");
+		dto.setStatusComment(Sta
+
+
+=================
+To run jar for Kernel UIN generator, add the following in kernel-dev.properties:
+
+mosip.kernel.keymanager-service-sign-url= http://localhost/sign  # Puneet: dummy for testing
+
+===============
+QUESTION
+
+Not sure why this error is shown in the log while running UIN  generator jar:
+
+2019-06-11 09:17:01,794 [vert.x-eventloop-thread-3] INFO [o.s.c.a.ConfigurationClassParser].processPropertySource.459 : Properties location [classpath:application-${spring.profiles.active}.properties] not resolvable: class path resource [application-dev.properties] cannot be opened because it does not exist
+=====================
+
+Why are exceptions and ERRORs raised inside code if GET request is sent instead of post
+
+2019-06-11 12:20:13,237 [http-nio-8091-exec-8] ERROR [i.m.k.c.e.ExceptionUtils].logRootCause.122 : Exception : Request method 'GET' not supported
+2019-06-11 12:20:13,239 [http-nio-8091-exec-8] ERROR [i.m.k.c.e.ExceptionUtils].logRootCause.123 : RootCause Exception : 
+org.springframework.web.HttpRequestMethodNotSupportedException: Request method 'GET' not supported
+	at org.springframework.web.servlet.mvc.method.RequestMappingInfoHandlerMapping.handleNoMatch(RequestMappingInfoHandlerMapping.java:198)
+	at org.springframework.web.servlet.handler.AbstractHandlerMethodMapping.lookupHandlerMethod(AbstractHandlerMethodMapping.java:376)
+	at org.springframework.web.servlet.handler.AbstractHandlerMethodMapping.getHandlerInternal(AbstractHandlerMethodMapping.java:316)
+	at org.springframework.web.servlet.handler.AbstractHandlerMethodMapping.getHandlerInternal(AbstractHandlerMethodMapping.java:62)
+    ...
+    ...
+==========================
+Error in documentation of Auth APIs "v1"
+Resource URL
+POST /v/1authenticate/useridPwd
+==============
+
+Services needed to run packet receiver stage:
+
+packet-receiver-stage:  port 8081 (does not use spring boot)
+registration-processor-registration-status-service-impl :  port 8083
+kernel-auth: port 8091 
+cryptomanager:  port 8097
+keymanager: port 8188 # Changed from default of 8088 which was clashing with 
+            hadoop yarn.
+=================
+Hadoop install:
+https://linuxconfig.org/how-to-install-hadoop-on-ubuntu-18-04-bionic-beaver-linux
+
+To start hadoop:
+$ sudu su hadoop
+$ start-dfs.sh
+$ start-yarn.sh
+
+- Set HDFS security to false in regproc properties, otherwise Kerbros will be used and the run will fail.
+- Set signature to false in registration-processor-dev.properties otherwise DigitalSignature exception will be raised: 
+  registration.processor.signature.isEnabled=false
+
+- Note that yarn runs on 8088 port.  So run kernel-keymanager on a different
+port as that will clash.
+============
+
+Why should these appears as error messages.  It should be logger.info:
+
+if (token == null) {
+			ResponseWrapper<ServiceError> errorResponse = setErrors(httpServletRequest);
+			ServiceError error = new ServiceError(AuthAdapterErrorCode.UNAUTHORIZED.getErrorCode(),
+					"Authentication Failed");
+			errorResponse.getErrors().add(error);
+			httpServletResponse.setStatus(HttpStatus.UNAUTHORIZED.value());
+			httpServletResponse.setContentType("application/json");
+			httpServletResponse.setCharacterEncoding("UTF-8");
+			httpServletResponse.getWriter().write(convertObjectToJson(errorResponse));
+			logger.error("\n\n Exception : Authorization token not present > " + httpServletRequest.getRequestURL()
+					+ "\n\n");
+			return null;
+		}
+		AuthToken authToken = new AuthToken(token);
+		return getAuthenticationManager().authenticate(authToken);
+
+=============
+LDAP default port 10389
+LDAPS default port 10636
+Install LDAP as per Wiki guidelines.  
+Start ldap
+$  sudo service apacheds-2.0.0.AM25-default start
+
+Run LDAP ui utility to load .ldif files available in mosip-test/ldap
+./ApacheDirectoryStudio
+
+============
+COMMENT
+
+API: Auth response has field "responsetime". Slight misnomer. It should be "responseTimestamp". responsetime typically would mean time taken to respond.
+
+For invalid credentials ERROR should not be logged -- it is a normal case of invalid credentials. 
+============
+CORRECTION
+
+Incorrect API:
+POST /v1/authorize/validateToken
+Should be:
+/v1/authmanager/authorize/validateToken
+
+=============
+
+Unknown except but no error thrown on registration packet receiver.  The api
+gets the following response:
+Response Data = b'{"errors":[{"errorCode":"RPR-PKR-007","message":"Unknown Exception"}],"id":"mosip.registration.packet","version":"1.0","responsetime":"2019-06-21T14:56:15.756Z"}'
+
+===============
+COMMENT
+
+In RegProcessorLogger, the paths are hard coded.  By default on Ubuntu /home/logs is not accessible.  Shouldn't these be read from a config:
+
+mosipRollingFileAppender.setAppenderName("fileappender");
+        mosipRollingFileAppender.setFileName("/home/logs/registrationProcessor.log");
+        mosipRollingFileAppender.setFileNamePattern("/home/logs/registrationProcessor-%d{yyyy-MM-dd}-%i.log");
+
+Currently, change the dir to /tmp
+
+==================
+General programming quality is poor:
+    var3 = APIAuthorityList.PACKETRECEIVER.getList();
+            var4 = var3.length;
+
+            for(var5 = 0; var5 < var4; ++var5) {
+                assignedRole = var3[var5];
+                if (role.contains(assignedRole)) {
+                    return true;
+                }
+            }
+
+Why should we use "contains" and not == ?
+
+The above code could be written as:
+
+     allowedRoles = APIAuthorityList.PACKETRECEIVER.getList();
+     for (int i = 0; i < allowedRoles.length; i ++) {
+         if (role == allowedRoles[i])
+             return True;
+     }
+
+================
+
+COMMENT:
+
+kernel-cryptography-service is not mentioed in registration-status-service however it is used in decrypting.
+
+=============
+Install softhsm2
+https://wiki.opendnssec.org/display/SoftHSMDOCS/SoftHSM+Documentation+v2
+
+$ sudo apt install libssl-dev
+
+Create a token on slot 0:
+
+$ softhsm2-util --init-token --slot 0 --label "PuneetToken"
+=====
+To test xml schema use:
+import xmlschema
+r = xmlschema.validate('sample.xml', 'cbeff_ed2.xsd')
+==========
+COMMENT
+Messages should also be logged in my opinion.
+ } catch (KeyStoreException var3) {
+            throw new KeystoreProcessingException(KeymanagerErrorCode.KEYSTORE_PROCESSING_ERROR.getErrorCode(), KeymanagerErrorCode.KEYSTORE_PROCESSING_ERROR.getErrorMessage() + var3.getMessage());
+        }
+===========
+Set the right validate url in application-dev.properties.
+auth.server.validate.url=http://localhost:8091/v1/authmanager/authorize/validateToken
+
